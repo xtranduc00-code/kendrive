@@ -45,11 +45,11 @@ export default async function FolderPage({
               </span>
             ))}
           </nav>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <h1 className="h1">{folderName}</h1>
             <div className="flex items-center gap-2">
-              <FileUploader parentId={folderId} />
               <CreateFolderButton parentId={folderId} />
+              <FileUploader parentId={folderId} />
             </div>
           </div>
         </section>

@@ -127,7 +127,7 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
     setLoading(false);
     setDeleteOpen(false);
     clearSelection();
-    if (ok) toast.error(`Deleted ${ok} item(s)`);
+    if (ok) toast.success(`Deleted ${ok} item(s)`);
     if (fail) toast.error(`Failed to delete ${fail} item(s)`);
     if (ok || fail) window.location.reload();
   };

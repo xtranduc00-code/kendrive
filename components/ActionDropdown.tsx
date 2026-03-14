@@ -93,7 +93,7 @@ const ActionDropdown = ({ file }: { file: DriveFileDisplay }) => {
     const res = await deleteDriveFileAction(file.$id);
     setLoading(false);
     if (res.ok) {
-      toast.error(`Deleted — "${file.name}" moved to trash`);
+      toast.success(`Deleted — "${file.name}" moved to trash`);
       closeAllModals();
     } else {
       toast.error(`Delete failed — ${res.error ?? "Something went wrong"}`);
