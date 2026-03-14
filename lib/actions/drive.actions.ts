@@ -1,0 +1,342 @@
+"use server";
+
+import { auth } from "@/auth";
+import {
+  fetchDriveFiles,
+  fetchDriveQuota,
+  fetchDriveFolders,
+  fetchDriveFileMetadata,
+  uploadDriveFile,
+  deleteDriveFile,
+  renameDriveFile,
+  moveDriveFile,
+  createDriveFolder,
+  createDrivePermission,
+  type DriveFileDisplay,
+  type DriveFileType,
+  type DriveFolder,
+} from "@/lib/google-drive";
+import { parseStringify } from "@/lib/utils";
+import { revalidatePath } from "next/cache";
+
+const handleError = (error: unknown, message: string) => {
+  console.error(message, error);
+  throw error;
+};
+
+async function getAccessToken(): Promise<string | null> {
+  const session = await auth();
+  const token = session?.accessToken;
+  return token && typeof token === "string" ? token : null;
+}
+
+/** Get files from Google Drive; shape compatible with current getFiles (documents array) */
+export async function getDriveFiles(options: {
+  types?: DriveFileType[];
+  searchText?: string;
+  sort?: string;
+  limit?: number;
+  pageToken?: string;
+  parentId?: string;
+}) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return parseStringify({ documents: [], total: 0, nextPageToken: undefined });
+    }
+    const { files, nextPageToken } = await fetchDriveFiles(accessToken, {
+      types: options.types,
+      searchText: options.searchText,
+      sort: options.sort,
+      limit: options.limit ?? 50,
+      pageToken: options.pageToken,
+      parentId: options.parentId,
+    });
+    return parseStringify({
+      documents: files,
+      total: files.length,
+      nextPageToken,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("403") || msg.includes("Drive API")) {
+      console.warn("Drive API 403 – enable Google Drive API in Cloud Console:", msg.slice(0, 200));
+      return parseStringify({ documents: [], total: 0, nextPageToken: undefined });
+    }
+    handleError(e, "Failed to get Drive files");
+  }
+}
+
+/** Storage quota from Drive + per-type summary from recent files (for dashboard cards) */
+export async function getDriveTotalSpaceUsed() {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return parseStringify({
+        image: { size: 0, latestDate: "" },
+        document: { size: 0, latestDate: "" },
+        video: { size: 0, latestDate: "" },
+        audio: { size: 0, latestDate: "" },
+        other: { size: 0, latestDate: "" },
+        used: 0,
+        all: 0,
+      });
+    }
+    const [quota, { files }] = await Promise.all([
+      fetchDriveQuota(accessToken),
+      fetchDriveFiles(accessToken, { limit: 1000 }),
+    ]);
+
+    const totalSpace = {
+      image: { size: 0, latestDate: "" },
+      document: { size: 0, latestDate: "" },
+      video: { size: 0, latestDate: "" },
+      audio: { size: 0, latestDate: "" },
+      other: { size: 0, latestDate: "" },
+      used: quota.usageInDrive || quota.usage,
+      all: quota.limit,
+    };
+
+    files.forEach((f: DriveFileDisplay) => {
+      const key = f.type as keyof typeof totalSpace;
+      if (key in totalSpace && typeof totalSpace[key] === "object") {
+        const slot = totalSpace[key] as { size: number; latestDate: string };
+        slot.size += f.size;
+        if (
+          !slot.latestDate ||
+          new Date(f.$createdAt) > new Date(slot.latestDate)
+        ) {
+          slot.latestDate = f.$createdAt;
+        }
+      }
+    });
+
+    return parseStringify(totalSpace);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("403") || msg.includes("Drive")) {
+      console.warn("Drive API 403 – enable Google Drive API in Cloud Console:", msg.slice(0, 200));
+      return parseStringify({
+        image: { size: 0, latestDate: "" },
+        document: { size: 0, latestDate: "" },
+        video: { size: 0, latestDate: "" },
+        audio: { size: 0, latestDate: "" },
+        other: { size: 0, latestDate: "" },
+        used: 0,
+        all: 0,
+      });
+    }
+    handleError(e, "Failed to get Drive quota");
+  }
+}
+
+/** Upload file to Drive. formData: { file: File, parentId?: string } */
+export async function uploadDriveFileAction(formData: FormData) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new Error("Not authenticated");
+    const file = formData.get("file") as File | null;
+    if (!file || !(file instanceof File)) throw new Error("No file");
+    const parentId = (formData.get("parentId") as string) || undefined;
+    await uploadDriveFile(accessToken, file, parentId);
+    revalidatePath("/");
+    revalidatePath("/documents");
+    revalidatePath("/images");
+    revalidatePath("/media");
+    revalidatePath("/others");
+    revalidatePath("/folders");
+    if (parentId) revalidatePath(`/folder/${parentId}`);
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("Upload failed", e);
+    if (msg.includes("403") && (msg.includes("insufficient") || msg.includes("scope"))) {
+      return { ok: false, error: "No upload permission. Please sign out and sign in again with Google." };
+    }
+    return { ok: false, error: msg || "Upload failed" };
+  }
+}
+
+/** Delete file from Drive */
+export async function deleteDriveFileAction(fileId: string) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new Error("Not authenticated");
+    await deleteDriveFile(accessToken, fileId);
+    revalidatePath("/");
+    revalidatePath("/documents");
+    revalidatePath("/images");
+    revalidatePath("/media");
+    revalidatePath("/others");
+    return { ok: true };
+  } catch (e) {
+    console.error("Delete failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
+  }
+}
+
+/** Rename file */
+export async function renameDriveFileAction(fileId: string, name: string) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new Error("Not authenticated");
+    await renameDriveFile(accessToken, fileId, name);
+    revalidatePath("/");
+    revalidatePath("/documents");
+    revalidatePath("/images");
+    revalidatePath("/media");
+    revalidatePath("/others");
+    return { ok: true };
+  } catch (e) {
+    console.error("Rename failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Rename failed" };
+  }
+}
+
+/** Move file to folder */
+export async function moveDriveFileAction(fileId: string, addParents: string, removeParents: string) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new Error("Not authenticated");
+    await moveDriveFile(accessToken, fileId, addParents, removeParents);
+    revalidatePath("/");
+    revalidatePath("/documents");
+    revalidatePath("/images");
+    revalidatePath("/media");
+    revalidatePath("/others");
+    return { ok: true };
+  } catch (e) {
+    console.error("Move failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Move failed" };
+  }
+}
+
+/** List folders for move picker. Returns root + subfolders when parentId is root. */
+export async function getDriveFoldersAction(parentId?: string): Promise<DriveFolder[]> {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return [];
+    const id = parentId ?? "root";
+    if (id === "root") {
+      const folders = await fetchDriveFolders(accessToken, "root");
+      return parseStringify([{ id: "root", name: "My Drive (root)" }, ...folders]);
+    }
+    const folders = await fetchDriveFolders(accessToken, id);
+    return parseStringify(folders);
+  } catch (e) {
+    console.error("Get folders failed", e);
+    return [];
+  }
+}
+
+/** Get folder/file name by id (for breadcrumb). */
+export async function getDriveFolderInfoAction(folderId: string): Promise<{ id: string; name: string; parents?: string[] } | null> {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return null;
+    const info = await fetchDriveFileMetadata(accessToken, folderId);
+    return parseStringify(info);
+  } catch (e) {
+    console.error("Get folder info failed", e);
+    return null;
+  }
+}
+
+/** Get breadcrumb items for a folder (root -> ... -> parent -> current). */
+export async function getFolderBreadcrumbAction(folderId: string): Promise<{ id: string; name: string }[]> {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return [{ id: "root", name: "Folders" }, { id: folderId, name: "Folder" }];
+    const chain: { id: string; name: string }[] = [];
+    let currentId: string | undefined = folderId;
+    const seen = new Set<string>();
+    while (currentId && currentId !== "root" && !seen.has(currentId)) {
+      seen.add(currentId);
+      const info = await fetchDriveFileMetadata(accessToken, currentId);
+      chain.push({ id: currentId, name: info.name });
+      currentId = info.parents?.[0];
+    }
+    return [{ id: "root", name: "Folders" }, ...chain.reverse()];
+  } catch (e) {
+    console.error("Breadcrumb failed", e);
+    return [{ id: "root", name: "Folders" }, { id: folderId, name: "Folder" }];
+  }
+}
+
+/** List folders in root (for Folders page). No "root" placeholder. */
+export async function listDriveFoldersAction(parentId: string = "root"): Promise<DriveFolder[]> {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return [];
+    const folders = await fetchDriveFolders(accessToken, parentId);
+    return parseStringify(folders);
+  } catch (e) {
+    console.error("List folders failed", e);
+    return [];
+  }
+}
+
+/** Create new folder. */
+export async function createDriveFolderAction(name: string, parentId: string = "root") {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new Error("Not authenticated");
+    await createDriveFolder(accessToken, name, parentId);
+    revalidatePath("/");
+    revalidatePath("/folders");
+    if (parentId !== "root") revalidatePath(`/folder/${parentId}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("Create folder failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Create folder failed" };
+  }
+}
+
+/** Share file/folder: add permission for email (reader or writer). */
+export async function shareDriveFileAction(
+  fileId: string,
+  emailAddress: string,
+  role: "reader" | "writer"
+) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new Error("Not authenticated");
+    const email = emailAddress.trim().toLowerCase();
+    if (!email) throw new Error("Enter email");
+    await createDrivePermission(accessToken, fileId, {
+      role,
+      type: "user",
+      emailAddress: email,
+      sendNotificationEmail: true,
+    });
+    revalidatePath("/");
+    revalidatePath("/folders");
+    revalidatePath("/documents");
+    revalidatePath("/images");
+    revalidatePath("/media");
+    revalidatePath("/others");
+    return { ok: true };
+  } catch (e) {
+    console.error("Share failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Share failed" };
+  }
+}
+
+/** Allow anyone with the link to access (General access). */
+export async function shareWithAnyoneAction(fileId: string, role: "reader" | "writer") {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new Error("Not authenticated");
+    await createDrivePermission(accessToken, fileId, { type: "anyone", role });
+    revalidatePath("/");
+    revalidatePath("/folders");
+    revalidatePath("/documents");
+    revalidatePath("/images");
+    revalidatePath("/media");
+    revalidatePath("/others");
+    return { ok: true };
+  } catch (e) {
+    console.error("Share with anyone failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Failed" };
+  }
+}
