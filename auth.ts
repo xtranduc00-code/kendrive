@@ -1,8 +1,11 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 
+const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  trustHost: true, // use request host/port (avoids redirect_uri_mismatch)
+  trustHost: true,
+  ...(baseUrl && { url: baseUrl }),
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID!,
@@ -28,10 +31,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      // session callback; pass accessToken from JWT into session
       return {
         ...session,
         accessToken: token.accessToken as string | undefined,
+        expiresAt: token.expiresAt as number | undefined,
       };
     },
   },

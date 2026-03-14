@@ -9,6 +9,57 @@ export const parseStringify = (value: unknown) =>
 
 export const convertFileToUrl = (file: File) => URL.createObjectURL(file);
 
+/** Whether file can be opened in-app (doc, excel, PDF, video, PPT, etc.) instead of new tab */
+export function isPreviewableInApp(mimeType?: string): boolean {
+  if (!mimeType) return false;
+  const mt = mimeType.toLowerCase();
+  if (mt === "application/vnd.google-apps.document") return true;
+  if (mt === "application/vnd.google-apps.spreadsheet") return true;
+  if (mt === "application/vnd.google-apps.presentation") return true;
+  if (mt === "application/pdf") return true;
+  if (mt.startsWith("video/")) return true;
+  if (mt.includes("application/vnd.openxmlformats-officedocument.wordprocessingml")) return true;
+  if (mt.includes("application/vnd.openxmlformats-officedocument.spreadsheetml")) return true;
+  if (mt.includes("application/vnd.openxmlformats-officedocument.presentationml")) return true;
+  if (mt.includes("application/vnd.ms-excel") || mt.includes("application/vnd.ms-word")) return true;
+  if (mt.includes("application/vnd.ms-powerpoint")) return true;
+  if (mt.includes("text/plain") || mt.includes("text/html")) return true;
+  return false;
+}
+
+/** Whether this is a Google Doc/Sheet/Slides that has an edit UI */
+export function isGoogleEditableType(mimeType?: string): boolean {
+  const mt = (mimeType || "").toLowerCase();
+  return (
+    mt === "application/vnd.google-apps.document" ||
+    mt === "application/vnd.google-apps.spreadsheet" ||
+    mt === "application/vnd.google-apps.presentation"
+  );
+}
+
+/** Embed URL for in-app iframe (view or edit for Google types) */
+export function getFilePreviewUrl(
+  fileId: string,
+  mimeType?: string,
+  options?: { edit?: boolean }
+): string {
+  const mt = (mimeType || "").toLowerCase();
+  const edit = options?.edit && isGoogleEditableType(mimeType);
+  const path = edit ? "edit" : "preview";
+  if (mt === "application/vnd.google-apps.document")
+    return `https://docs.google.com/document/d/${fileId}/${path}`;
+  if (mt === "application/vnd.google-apps.spreadsheet")
+    return `https://docs.google.com/spreadsheets/d/${fileId}/${path}`;
+  if (mt === "application/vnd.google-apps.presentation")
+    return `https://docs.google.com/presentation/d/${fileId}/${path}`;
+  return `https://drive.google.com/file/d/${fileId}/preview`;
+}
+
+/** URL to open Doc/Sheet/Slides in new tab for editing */
+export function getFileEditUrl(fileId: string, mimeType?: string): string {
+  return getFilePreviewUrl(fileId, mimeType, { edit: true });
+}
+
 /** Display file size; for Google files (Docs/Sheets/Slides) with size=0 show "—" */
 export function formatFileSizeDisplay(
   sizeInBytes: number,
@@ -194,7 +245,11 @@ export const constructDownloadUrl = (bucketFileId: string) => {
 };
 
 // DASHBOARD UTILS
-export const getUsageSummary = (totalSpace: any) => {
+export const getUsageSummary = (
+  totalSpace: any,
+  starredSummary?: { count: number; size: number; latestDate: string }
+) => {
+  const starred = starredSummary ?? { count: 0, size: 0, latestDate: "" };
   return [
     {
       title: "Documents",
@@ -221,11 +276,11 @@ export const getUsageSummary = (totalSpace: any) => {
       url: "/media",
     },
     {
-      title: "Others",
-      size: totalSpace.other.size,
-      latestDate: totalSpace.other.latestDate,
-      icon: "/assets/icons/file-other-light.svg",
-      url: "/others",
+      title: "Starred",
+      size: starred.size,
+      latestDate: starred.latestDate,
+      icon: "/assets/icons/star-light.svg",
+      url: "/starred",
     },
   ];
 };

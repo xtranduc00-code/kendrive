@@ -25,9 +25,9 @@ export const navItems = [
     url: "/media",
   },
   {
-    name: "Others",
-    icon: "/assets/icons/others.svg",
-    url: "/others",
+    name: "Starred",
+    icon: "/assets/icons/star.svg",
+    url: "/starred",
   },
 ];
 

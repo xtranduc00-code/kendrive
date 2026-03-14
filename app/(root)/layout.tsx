@@ -3,6 +3,7 @@ import Sidebar from "@/components/Sidebar";
 import MobileNavigation from "@/components/MobileNavigation";
 import Header from "@/components/Header";
 import DropZoneArea from "@/components/DropZoneArea";
+import { TooltipProviderWrapper } from "@/components/providers/TooltipProviderWrapper";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { ToastContainer } from "react-toastify";
@@ -15,6 +16,11 @@ const Layout = async ({ children }: { children: React.ReactNode }) => {
 
   if (!session?.user) return redirect("/sign-in");
 
+  // Token expired (e.g. Google access token) → sign out and force re-login so data doesn’t show as 0 / lag
+  if (session.expiresAt != null && Date.now() / 1000 > session.expiresAt) {
+    return redirect("/api/auth/signout?callbackUrl=%2Fsign-in");
+  }
+
   const user = {
     fullName: session.user.name ?? "User",
     email: session.user.email ?? "",
@@ -24,8 +30,9 @@ const Layout = async ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <main className="flex h-screen">
-      <Sidebar fullName={user.fullName} avatar={user.avatar} email={user.email} />
+    <TooltipProviderWrapper>
+      <main className="flex h-screen">
+        <Sidebar fullName={user.fullName} avatar={user.avatar} email={user.email} />
 
       <section className="flex h-full flex-1 flex-col">
         <MobileNavigation {...user} />
@@ -36,7 +43,8 @@ const Layout = async ({ children }: { children: React.ReactNode }) => {
       </section>
 
       <ToastContainer position="top-center" theme="colored" autoClose={4000} closeButton />
-    </main>
+      </main>
+    </TooltipProviderWrapper>
   );
 };
 export default Layout;

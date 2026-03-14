@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { cn, convertFileToUrl, getFileType } from "@/lib/utils";
@@ -16,6 +17,7 @@ interface Props {
 }
 
 const FileUploader = ({ className, parentId }: Props) => {
+  const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
 
@@ -23,6 +25,7 @@ const FileUploader = ({ className, parentId }: Props) => {
     async (acceptedFiles: File[]) => {
       setFiles(acceptedFiles);
       setUploading(true);
+      let anySuccess = false;
       for (const file of acceptedFiles) {
         if (file.size > MAX_FILE_SIZE) {
           setFiles((prev) => prev.filter((f) => f.name !== file.name));
@@ -34,6 +37,7 @@ const FileUploader = ({ className, parentId }: Props) => {
         if (parentId) formData.set("parentId", parentId);
         const res = await uploadDriveFileAction(formData);
         if (res.ok) {
+          anySuccess = true;
           setFiles((prev) => prev.filter((f) => f.name !== file.name));
           toast.success(`Uploaded — ${file.name}`);
         } else {
@@ -42,8 +46,9 @@ const FileUploader = ({ className, parentId }: Props) => {
         }
       }
       setUploading(false);
+      if (anySuccess) router.refresh();
     },
-    [parentId]
+    [parentId, router]
   );
 
   const { getRootProps, getInputProps } = useDropzone({

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -25,10 +26,12 @@ import {
   renameDriveFileAction,
   shareDriveFileAction,
   shareWithAnyoneAction,
+  starDriveFileAction,
 } from "@/lib/actions/drive.actions";
 import type { DriveFolder } from "@/lib/google-drive";
 import { FOLDER_ICON_OPTIONS } from "@/constants";
 import { toast } from "react-toastify";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const FOLDER_ICON = "/assets/icons/documents.svg";
 const STORAGE_KEY = (id: string) => `folder-icon-${id}`;
@@ -43,7 +46,9 @@ const actions = [
 ];
 
 export default function FolderCard({ folder }: { folder: DriveFolder }) {
+  const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [starred, setStarred] = useState(!!folder.starred);
   const [action, setAction] = useState<ActionType | null>(null);
   const [name, setName] = useState(folder.name);
   const [shareEmail, setShareEmail] = useState("");
@@ -86,10 +91,26 @@ export default function FolderCard({ folder }: { folder: DriveFolder }) {
     const res = await deleteDriveFileAction(folder.id);
     setLoading(false);
     if (res.ok) {
-      toast.error(`Deleted — "${folder.name}" moved to trash`);
+      toast.success(`Deleted — "${folder.name}" moved to trash`);
       closeAll();
+      router.refresh();
     } else {
       toast.error(`Delete failed — ${res.error ?? "Something went wrong"}`);
+    }
+  };
+
+  const handleStar = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = !starred;
+    setStarred(next);
+    const res = await starDriveFileAction(folder.id, next);
+    if (res.ok) {
+      toast.success(next ? "Starred" : "Unstarred");
+      router.refresh();
+    } else {
+      setStarred(!!folder.starred);
+      toast.error(res.error ?? "Failed");
     }
   };
 
@@ -131,12 +152,35 @@ export default function FolderCard({ folder }: { folder: DriveFolder }) {
 
   return (
     <>
-      <div className="file-card flex flex-col gap-6 rounded-[18px] bg-white p-5 shadow-sm transition-all hover:shadow-drop-3">
+      <div className="file-card relative flex flex-col gap-6 rounded-[18px] bg-white p-5 shadow-sm transition-all hover:shadow-drop-3">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={handleStar}
+              className="absolute right-12 top-3 z-10 flex size-8 items-center justify-center rounded-full text-light-300 transition-colors hover:bg-brand/10 hover:text-brand"
+              aria-label={starred ? "Remove star" : "Star"}
+            >
+              {starred ? (
+                <svg className="h-5 w-5 fill-brand text-brand" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                </svg>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{starred ? "Remove star" : "Star"}</TooltipContent>
+        </Tooltip>
         <div className="flex justify-between items-start">
-          <Link
-            href={APP_FOLDER_URL(folder.id)}
-            className="flex items-center gap-3 flex-1 min-w-0"
-          >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                href={APP_FOLDER_URL(folder.id)}
+                className="flex items-center gap-3 flex-1 min-w-0"
+              >
             <button
               type="button"
               onClick={(e) => {
@@ -155,7 +199,12 @@ export default function FolderCard({ folder }: { folder: DriveFolder }) {
               />
             </button>
             <p className="subtitle-2 line-clamp-1 text-light-100">{folder.name}</p>
-          </Link>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[280px] break-words font-medium">
+              {folder.name}
+            </TooltipContent>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger className="shad-no-focus">
               <Image src="/assets/icons/dots.svg" alt="Menu" width={34} height={34} />

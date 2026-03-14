@@ -18,6 +18,7 @@ import {
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDetails } from "@/components/ActionsModalContent";
@@ -30,6 +31,7 @@ import {
   shareWithAnyoneAction,
 } from "@/lib/actions/drive.actions";
 import type { DriveFileDisplay, DriveFolder } from "@/lib/google-drive";
+import { isPreviewableInApp } from "@/lib/utils";
 import { toast } from "react-toastify";
 
 const driveActions = [
@@ -39,10 +41,12 @@ const driveActions = [
   { label: "Share", icon: "/assets/icons/share.svg", value: "share" },
   { label: "Download", icon: "/assets/icons/download.svg", value: "download" },
   { label: "Delete", icon: "/assets/icons/delete.svg", value: "delete" },
-  { label: "Open in Drive", icon: "/assets/icons/share.svg", value: "open" },
+  { label: "Open", icon: "/assets/icons/share.svg", value: "open" },
 ];
 
 const ActionDropdown = ({ file }: { file: DriveFileDisplay }) => {
+  const router = useRouter();
+  const pathname = usePathname();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [action, setAction] = useState<ActionType | null>(null);
@@ -74,6 +78,10 @@ const ActionDropdown = ({ file }: { file: DriveFileDisplay }) => {
 
   const downloadUrl = file.webContentLink || file.url;
   const currentParent = file.parents?.[0] ?? "root";
+  const openInApp = isPreviewableInApp(file.mimeType);
+  const openUrl = openInApp
+    ? `/file/${file.$id}?mime=${encodeURIComponent(file.mimeType || "")}&name=${encodeURIComponent(file.name)}&from=${encodeURIComponent(pathname || "/folders")}`
+    : file.url;
 
   const handleRename = async () => {
     if (!name.trim()) return;
@@ -95,6 +103,7 @@ const ActionDropdown = ({ file }: { file: DriveFileDisplay }) => {
     if (res.ok) {
       toast.success(`Deleted — "${file.name}" moved to trash`);
       closeAllModals();
+      router.refresh();
     } else {
       toast.error(`Delete failed — ${res.error ?? "Something went wrong"}`);
     }
@@ -111,6 +120,7 @@ const ActionDropdown = ({ file }: { file: DriveFileDisplay }) => {
     if (res.ok) {
       toast.success(`Moved — "${file.name}" moved to selected folder`);
       closeAllModals();
+      router.refresh();
     } else {
       toast.error(`Move failed — ${res.error ?? "Something went wrong"}`);
     }
@@ -192,9 +202,9 @@ const ActionDropdown = ({ file }: { file: DriveFileDisplay }) => {
                 </Link>
               ) : actionItem.value === "open" ? (
                 <Link
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={openUrl}
+                  target={openInApp ? undefined : "_blank"}
+                  rel={openInApp ? undefined : "noopener noreferrer"}
                   className="flex items-center gap-2"
                 >
                   <Image src={actionItem.icon} alt={actionItem.label} width={30} height={30} />

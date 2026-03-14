@@ -39,12 +39,14 @@ export interface DriveFileDisplay {
   iconLink?: string;
   thumbnailLink?: string;
   parents?: string[];
+  starred?: boolean;
 }
 
 export interface DriveFolder {
   id: string;
   name: string;
   parents?: string[];
+  starred?: boolean;
 }
 
 interface DriveFileResource {
@@ -60,6 +62,7 @@ interface DriveFileResource {
   modifiedTime?: string;
   owners?: { displayName?: string }[];
   parents?: string[];
+  starred?: boolean;
 }
 
 export function mapDriveFileToDisplay(f: DriveFileResource): DriveFileDisplay {
@@ -80,15 +83,20 @@ export function mapDriveFileToDisplay(f: DriveFileResource): DriveFileDisplay {
     iconLink: f.iconLink,
     thumbnailLink: f.thumbnailLink,
     parents: f.parents,
+    starred: f.starred,
   };
 }
 
-/** Build Drive API q (query) for list: not trashed, optional mime filters and name contains */
+/** Build Drive API q (query) for list: not trashed, optional mime filters, name contains, starred */
 export function buildDriveQuery(options: {
   types?: DriveFileType[];
   searchText?: string;
+  starred?: boolean;
 }): string {
   const parts: string[] = ["trashed = false"];
+  if (options.starred) {
+    parts.push("starred = true");
+  }
   if (options.types && options.types.length > 0) {
     const mimeConditions = options.types.map((t) => {
       switch (t) {
@@ -130,20 +138,21 @@ export async function fetchDriveFiles(
     limit?: number;
     pageToken?: string;
     parentId?: string;
+    starred?: boolean;
   }
 ): Promise<{ files: DriveFileDisplay[]; nextPageToken?: string }> {
-  const q = buildDriveQuery({ types: options.types, searchText: options.searchText });
+  const q = buildDriveQuery({ types: options.types, searchText: options.searchText, starred: options.starred });
   const orderBy = driveOrderBy(options.sort || "");
   const pageSize = Math.min(options.limit || 50, 100);
   const partsQuery = options.parentId
-    ? [q, `'${options.parentId}' in parents`]
+    ? [q, `'${options.parentId}' in parents`, "mimeType != 'application/vnd.google-apps.folder'"]
     : [q];
   const qFinal = partsQuery.join(" and ");
   const params = new URLSearchParams({
     q: qFinal,
     orderBy,
     pageSize: String(pageSize),
-    fields: "nextPageToken,files(id,name,mimeType,size,webViewLink,webContentLink,iconLink,thumbnailLink,createdTime,modifiedTime,owners,parents)",
+    fields: "nextPageToken,files(id,name,mimeType,size,webViewLink,webContentLink,iconLink,thumbnailLink,createdTime,modifiedTime,owners,parents,starred)",
   });
   if (options.pageToken) params.set("pageToken", options.pageToken);
 
@@ -157,6 +166,44 @@ export async function fetchDriveFiles(
   const data = await res.json();
   const files = (data.files || []).map(mapDriveFileToDisplay);
   return { files, nextPageToken: data.nextPageToken };
+}
+
+const FOLDER_MIME = "application/vnd.google-apps.folder";
+
+/** List all starred items (files + folders). */
+export async function fetchDriveStarred(
+  accessToken: string,
+  options: { sort?: string; limit?: number; pageToken?: string } = {}
+): Promise<{ folders: DriveFolder[]; files: DriveFileDisplay[]; nextPageToken?: string }> {
+  const q = "trashed = false and starred = true";
+  const orderBy = driveOrderBy(options.sort || "$createdAt-desc");
+  const pageSize = Math.min(options.limit ?? 100, 100);
+  const params = new URLSearchParams({
+    q,
+    orderBy,
+    pageSize: String(pageSize),
+    fields: "nextPageToken,files(id,name,mimeType,size,webViewLink,webContentLink,iconLink,thumbnailLink,createdTime,modifiedTime,owners,parents,starred)",
+  });
+  if (options.pageToken) params.set("pageToken", options.pageToken);
+  const res = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Drive API starred: ${res.status} ${err}`);
+  }
+  const data = await res.json();
+  const raw = data.files || [];
+  const folders: DriveFolder[] = [];
+  const files: DriveFileDisplay[] = [];
+  for (const f of raw) {
+    if (f.mimeType === FOLDER_MIME) {
+      folders.push({ id: f.id, name: f.name, parents: f.parents, starred: true });
+    } else {
+      files.push(mapDriveFileToDisplay(f));
+    }
+  }
+  return { folders, files, nextPageToken: data.nextPageToken };
 }
 
 export interface DriveStorageQuota {
@@ -190,7 +237,7 @@ export async function fetchDriveFolders(
   const params = new URLSearchParams({
     q,
     pageSize: "100",
-    fields: "files(id,name,parents)",
+    fields: "files(id,name,parents,starred)",
   });
   const res = await fetch(`${DRIVE_API}/files?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -200,10 +247,11 @@ export async function fetchDriveFolders(
     throw new Error(`Drive folders: ${res.status} ${err}`);
   }
   const data = await res.json();
-  return (data.files || []).map((f: { id: string; name: string; parents?: string[] }) => ({
+  return (data.files || []).map((f: { id: string; name: string; parents?: string[]; starred?: boolean }) => ({
     id: f.id,
     name: f.name,
     parents: f.parents,
+    starred: f.starred,
   }));
 }
 
@@ -286,6 +334,26 @@ export async function moveDriveFile(
   }
 }
 
+/** Mark item as starred. */
+export async function updateDriveFileStarred(
+  accessToken: string,
+  fileId: string,
+  starred: boolean
+): Promise<void> {
+  const res = await fetch(`${DRIVE_API}/files/${fileId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ starred }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Drive star: ${res.status} ${err}`);
+  }
+}
+
 /** Get file/folder metadata (name, parents for breadcrumb). */
 export async function fetchDriveFileMetadata(
   accessToken: string,
@@ -327,6 +395,47 @@ export async function createDriveFolder(
   }
   const data = await res.json();
   return { id: data.id, name: data.name, parents: data.parents };
+}
+
+/** List permissions for a file (to find existing "anyone" permission). */
+export async function fetchDrivePermissions(
+  accessToken: string,
+  fileId: string
+): Promise<{ id: string; type: string; role: string }[]> {
+  const res = await fetch(
+    `${DRIVE_API}/files/${fileId}/permissions?fields=permissions(id,type,role)`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Drive list permissions: ${res.status} ${err}`);
+  }
+  const data = await res.json();
+  return data.permissions || [];
+}
+
+/** Update an existing permission's role (e.g. anyone reader → writer). */
+export async function updateDrivePermission(
+  accessToken: string,
+  fileId: string,
+  permissionId: string,
+  role: "reader" | "writer"
+): Promise<void> {
+  const res = await fetch(
+    `${DRIVE_API}/files/${fileId}/permissions/${permissionId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ role }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Drive update permission: ${res.status} ${err}`);
+  }
 }
 
 /** Share file/folder: add permission (user by email or anyone with the link). */

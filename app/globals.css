@@ -206,6 +206,25 @@
   .nav-icon-active {
     @apply invert-0 opacity-100 !important;
   }
+  /* Sidebar nav icons – to hơn, màu đồng nhất (xám khi không chọn, trắng khi active) */
+  .sidebar-nav-icon-wrap {
+    @apply flex shrink-0 items-center justify-center;
+  }
+  .sidebar-nav-icon {
+    @apply h-7 w-7 object-contain !important;
+  }
+  .sidebar .sidebar-nav-icon {
+    filter: brightness(0) saturate(100%) opacity(0.5) !important;
+  }
+  .sidebar .sidebar-nav-icon-wrap--active .sidebar-nav-icon {
+    filter: brightness(0) invert(1) !important;
+  }
+  .sidebar-toggle-icon {
+    @apply flex items-center justify-center;
+  }
+  .sidebar-toggle-icon svg {
+    @apply h-5 w-5;
+  }
 
   /* =====  STYLE CLASSES */
 
@@ -249,6 +268,35 @@
     @apply body-1 mt-10 text-center text-light-200 !important;
   }
 
+  /* File viewer – maximize iframe area, no gap at bottom */
+  .main-content:has(.file-viewer-root) {
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
+  }
+  .file-viewer-root {
+    @apply flex flex-col max-w-none gap-2 !important;
+    margin: -1.25rem -1.25rem 0 -1.25rem;
+    width: calc(100% + 2.5rem);
+    min-height: 100%;
+    height: calc(100vh - 4.5rem);
+  }
+  @media (min-width: 768px) {
+    .file-viewer-root {
+      margin: -2.25rem -2.25rem 0 -2.25rem;
+      width: calc(100% + 4.5rem);
+      height: calc(100vh - 5rem);
+    }
+  }
+  .file-viewer-bar {
+    @apply flex flex-shrink-0 items-center gap-2 py-1.5 px-1 !important;
+  }
+  .file-viewer-frame-wrap {
+    @apply flex-1 min-h-0 rounded-lg sm:rounded-xl border border-light-300 bg-white overflow-hidden !important;
+  }
+  .file-viewer-iframe {
+    @apply w-full h-full min-h-0 border-0 !important;
+  }
+
   /* Type page */
   .page-container {
     @apply mx-auto flex w-full max-w-7xl flex-col items-stretch gap-8 !important;
@@ -257,7 +305,10 @@
     @apply flex mt-2 flex-col justify-between sm:flex-row sm:items-center !important;
   }
   .file-list {
-    @apply grid w-full gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 !important;
+    @apply grid w-full gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 !important;
+  }
+  .file-list.file-list--list {
+    @apply grid-cols-1 gap-3 !important;
   }
   /* Folder card icon – darker so it’s visible on light background */
   .folder-card-icon img {
@@ -327,12 +378,18 @@
     @apply body-2 mx-auto w-fit rounded-xl bg-error/5 px-8 py-4 text-center text-error !important;
   }
 
-  /* Card */
+  /* Card – to hơn, thoáng hơn */
   .file-card {
-    @apply flex cursor-pointer flex-col gap-6 rounded-[18px] bg-white p-5 shadow-sm transition-all hover:shadow-drop-3 !important;
+    @apply flex cursor-pointer flex-col gap-6 rounded-[20px] bg-white p-6 shadow-sm transition-all hover:shadow-drop-3 !important;
+  }
+  .file-card--list {
+    @apply flex-row items-center gap-4 py-4 px-5 !important;
   }
   .file-card-details {
     @apply flex flex-col gap-2 text-light-100 !important;
+  }
+  .file-card-details--list {
+    @apply gap-0.5 !important;
   }
 
   /* Chart */
@@ -382,6 +439,11 @@
   /* Header */
   .header {
     @apply hidden items-center justify-between gap-5 p-5 sm:flex lg:py-7 xl:gap-10 !important;
+  }
+  .header.header--collapsed {
+    @apply py-2 lg:py-2 !important;
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
   .header-wrapper {
     @apply flex-center min-w-fit gap-4 !important;
@@ -437,7 +499,34 @@
 
   /* Sidebar */
   .sidebar {
-    @apply remove-scrollbar hidden h-screen w-[90px] flex-col overflow-auto px-5 py-7 sm:flex lg:w-[280px] xl:w-[325px] !important;
+    @apply remove-scrollbar hidden h-screen w-[90px] flex-col overflow-auto px-5 py-7 sm:flex lg:w-[280px] xl:w-[325px] transition-[width] duration-200 !important;
+  }
+  .sidebar.sidebar--collapsed {
+    @apply lg:w-[72px] xl:w-[72px] lg:px-2 !important;
+  }
+  .sidebar-header {
+    @apply flex items-center justify-between gap-2 lg:justify-start;
+  }
+  .sidebar.sidebar--collapsed .sidebar-header {
+    @apply flex-col gap-2;
+  }
+  .sidebar-logo {
+    @apply flex shrink-0 items-center justify-center;
+  }
+  .sidebar-logo-full {
+    @apply hidden h-auto lg:block;
+  }
+  .sidebar.sidebar--collapsed .sidebar-logo-full {
+    @apply !hidden;
+  }
+  .sidebar-logo-icon {
+    @apply lg:hidden;
+  }
+  .sidebar.sidebar--collapsed .sidebar-logo-icon {
+    @apply !block !h-8 !w-8;
+  }
+  .sidebar-toggle {
+    @apply hidden shrink-0 items-center justify-center rounded-lg p-2 text-light-200 transition-colors hover:bg-brand/10 hover:text-brand sm:flex;
   }
   .sidebar-nav {
     @apply h5 mt-9 flex-1 gap-1 text-brand !important;
@@ -445,11 +534,38 @@
   .sidebar-nav-item {
     @apply flex text-light-100 gap-4 rounded-xl lg:w-full justify-center lg:justify-start items-center h5 lg:px-[30px] h-[52px] lg:rounded-full !important;
   }
+  .sidebar.sidebar--collapsed .sidebar-nav-item {
+    @apply lg:justify-center lg:px-0 !important;
+  }
+  .sidebar-nav-label {
+    @apply hidden lg:block;
+  }
+  .sidebar.sidebar--collapsed .sidebar-nav-label {
+    @apply !hidden;
+  }
+  .sidebar-illustration {
+    @apply w-full;
+  }
+  .sidebar.sidebar--collapsed .sidebar-illustration {
+    @apply hidden;
+  }
   .sidebar-user-info {
     @apply mt-4 flex items-center justify-center gap-2 rounded-full bg-brand/10 p-1 text-light-100 lg:justify-start lg:p-3 !important;
   }
+  .sidebar.sidebar--collapsed .sidebar-user-info {
+    @apply lg:justify-center lg:p-1 !important;
+  }
+  .sidebar-user-text {
+    @apply hidden lg:block min-w-0;
+  }
+  .sidebar.sidebar--collapsed .sidebar-user-text {
+    @apply !hidden;
+  }
   .sidebar-user-avatar {
-    @apply aspect-square w-10 rounded-full object-cover !important;
+    @apply aspect-square w-10 shrink-0 rounded-full object-cover !important;
+  }
+  .sidebar.sidebar--collapsed .sidebar-user-avatar {
+    @apply !w-9 !important;
   }
 
   .shad-active {

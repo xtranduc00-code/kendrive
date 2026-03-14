@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { uploadDriveFileAction } from "@/lib/actions/drive.actions";
 import { toast } from "react-toastify";
@@ -14,6 +14,7 @@ function getParentIdFromPathname(pathname: string): string | undefined {
 }
 
 export default function DropZoneArea({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const pathname = usePathname();
   const parentId = getParentIdFromPathname(pathname ?? "");
@@ -22,6 +23,7 @@ export default function DropZoneArea({ children }: { children: React.ReactNode }
     async (acceptedFiles: File[]) => {
       if (!acceptedFiles.length) return;
       setUploading(true);
+      let anySuccess = false;
       for (const file of acceptedFiles) {
         if (file.size > MAX_FILE_SIZE) {
           toast.error(`File too large — ${file.name} is over 50MB limit`);
@@ -32,14 +34,16 @@ export default function DropZoneArea({ children }: { children: React.ReactNode }
         if (parentId) formData.set("parentId", parentId);
         const res = await uploadDriveFileAction(formData);
         if (res.ok) {
+          anySuccess = true;
           toast.success(`Uploaded — ${file.name}`);
         } else {
           toast.error(`Upload failed — ${res.error ?? "Something went wrong"}`);
         }
       }
       setUploading(false);
+      if (anySuccess) router.refresh();
     },
-    [parentId]
+    [parentId, router]
   );
 
   const { getRootProps, isDragActive } = useDropzone({

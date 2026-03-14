@@ -10,6 +10,7 @@ import Thumbnail from "@/components/Thumbnail";
 import FormattedDateTime from "@/components/FormattedDateTime";
 import { useDebounce } from "use-debounce";
 import type { DriveFileDisplay } from "@/lib/google-drive";
+import { isPreviewableInApp } from "@/lib/utils";
 
 const Search = () => {
   const [query, setQuery] = useState("");
@@ -47,7 +48,11 @@ const Search = () => {
     e.stopPropagation();
     setOpen(false);
     setResults([]);
-    window.open(file.url, "_blank");
+    if (isPreviewableInApp(file.mimeType)) {
+      router.push(`/file/${file.$id}?mime=${encodeURIComponent(file.mimeType || "")}&name=${encodeURIComponent(file.name)}&from=${encodeURIComponent(path || "/")}`);
+    } else {
+      window.open(file.url, "_blank");
+    }
   };
 
   const handleGoToFolder = (e: React.MouseEvent, file: DriveFileDisplay) => {
@@ -82,7 +87,7 @@ const Search = () => {
                 <li
                   className="flex cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-light-400/60"
                   key={file.$id}
-                  onClick={() => window.open(file.url, "_blank")}
+                  onClick={(e) => handleOpenFile(e, file)}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-4">
                     <Thumbnail

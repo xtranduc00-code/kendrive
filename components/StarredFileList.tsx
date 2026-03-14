@@ -10,31 +10,31 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { moveDriveFileAction, deleteDriveFileAction, getDriveFoldersAction, getDriveFiles } from "@/lib/actions/drive.actions";
+import { moveDriveFileAction, deleteDriveFileAction, getDriveFoldersAction, getDriveStarredAction } from "@/lib/actions/drive.actions";
 import { toast } from "react-toastify";
 import Card from "@/components/Card";
 import FolderCard from "@/components/FolderCard";
-import FolderSortSelect from "@/components/FolderSortSelect";
+import StarredSortSelect from "@/components/StarredSortSelect";
 import type { DriveFileDisplay } from "@/lib/google-drive";
 import type { DriveFolder } from "@/lib/google-drive";
 
 type Props = {
+  initialFolders: DriveFolder[];
   initialFiles: DriveFileDisplay[];
   initialNextPageToken?: string;
-  folders: DriveFolder[];
-  currentFolderId: string;
   sort: string;
 };
 
-function parseFilesRes(res: unknown): { documents: DriveFileDisplay[]; nextPageToken?: string } {
-  const r = res as { documents?: DriveFileDisplay[]; nextPageToken?: string };
-  return { documents: r?.documents ?? [], nextPageToken: r?.nextPageToken };
-}
-
 type SelectedItem = { id: string; name: string; type: "file" | "folder" };
 
-export default function FolderFileListWithSelect({ initialFiles, initialNextPageToken, folders, currentFolderId, sort }: Props) {
+export default function StarredFileList({
+  initialFolders,
+  initialFiles,
+  initialNextPageToken,
+  sort,
+}: Props) {
   const router = useRouter();
+  const [folders, setFolders] = useState<DriveFolder[]>(initialFolders);
   const [files, setFiles] = useState<DriveFileDisplay[]>(initialFiles);
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(initialNextPageToken);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -52,9 +52,10 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
   }, []);
 
   useEffect(() => {
+    setFolders(initialFolders);
     setFiles(initialFiles);
     setNextPageToken(initialNextPageToken ?? undefined);
-  }, [initialFiles, initialNextPageToken]);
+  }, [initialFolders, initialFiles, initialNextPageToken]);
 
   const setViewModeAndSave = (mode: "grid" | "list") => {
     setViewMode(mode);
@@ -68,17 +69,14 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
   const loadMore = async () => {
     if (!nextPageToken || loadingMore) return;
     setLoadingMore(true);
-    const res = await getDriveFiles({
-      parentId: currentFolderId,
-      limit: 24,
-      sort,
-      pageToken: nextPageToken,
-    });
-    const { documents, nextPageToken: next } = parseFilesRes(res);
-    setFiles((prev) => [...prev, ...documents]);
-    setNextPageToken(next);
+    const res = await getDriveStarredAction({ sort, limit: 24, pageToken: nextPageToken });
+    const data = res as { folders?: DriveFolder[]; files?: DriveFileDisplay[]; nextPageToken?: string };
+    setFolders((prev) => [...prev, ...(data.folders ?? [])]);
+    setFiles((prev) => [...prev, ...(data.files ?? [])]);
+    setNextPageToken(data.nextPageToken);
     setLoadingMore(false);
   };
+
   const [moveOpen, setMoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [moveTargetId, setMoveTargetId] = useState<string>("root");
@@ -127,7 +125,7 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
   };
 
   const handleBulkMove = async () => {
-    if (!moveTargetId || moveTargetId === currentFolderId) {
+    if (!moveTargetId) {
       setMoveOpen(false);
       return;
     }
@@ -135,9 +133,10 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
     let ok = 0;
     let fail = 0;
     for (const item of selectedList) {
-      const parentId = item.type === "file"
-        ? files.find((f) => f.$id === item.id)?.parents?.[0] ?? "root"
-        : folders.find((f) => f.id === item.id)?.parents?.[0] ?? "root";
+      const parentId =
+        item.type === "file"
+          ? files.find((f) => f.$id === item.id)?.parents?.[0] ?? "root"
+          : folders.find((f) => f.id === item.id)?.parents?.[0] ?? "root";
       if (parentId === moveTargetId) continue;
       const res = await moveDriveFileAction(item.id, moveTargetId, parentId);
       if (res.ok) ok++;
@@ -197,7 +196,14 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
               <Button type="button" size="sm" onClick={openMove} disabled={loading}>
                 Move
               </Button>
-              <Button type="button" size="sm" variant="outline" className="bg-red/10 text-red hover:bg-red/20" onClick={() => setDeleteOpen(true)} disabled={loading}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="bg-red/10 text-red hover:bg-red/20"
+                onClick={() => setDeleteOpen(true)}
+                disabled={loading}
+              >
                 Delete
               </Button>
               <Button type="button" size="sm" variant="outline" onClick={clearSelection}>
@@ -221,7 +227,10 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
                   <input
                     type="checkbox"
                     checked={selected.has(folder.id)}
-                    onChange={(e) => { e.stopPropagation(); toggle(folder.id); }}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      toggle(folder.id);
+                    }}
                     onClick={(e) => e.stopPropagation()}
                     className="absolute left-3 top-3 z-10 size-5 rounded border-light-300 cursor-pointer"
                   />
@@ -270,7 +279,7 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
                   </svg>
                 </button>
               </div>
-              <FolderSortSelect folderId={currentFolderId} />
+              <StarredSortSelect />
             </div>
           </div>
           <div className={viewMode === "list" ? "file-list file-list--list mt-3" : "file-list mt-3"}>
@@ -280,7 +289,10 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
                   <input
                     type="checkbox"
                     checked={selected.has(file.$id)}
-                    onChange={(e) => { e.stopPropagation(); toggle(file.$id); }}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      toggle(file.$id);
+                    }}
                     onClick={(e) => e.stopPropagation()}
                     className="absolute left-3 top-3 z-10 size-5 rounded border-light-300 cursor-pointer"
                   />
@@ -316,13 +328,17 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
             >
               <option value="root">My Drive (root)</option>
               {foldersForMove.filter((f) => f.id !== "root").map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
               ))}
             </select>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveOpen(false)}>Cancel</Button>
-            <Button onClick={handleBulkMove} disabled={loading || moveTargetId === currentFolderId}>
+            <Button variant="outline" onClick={() => setMoveOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkMove} disabled={loading}>
               {loading ? "..." : "Move"}
             </Button>
           </DialogFooter>
@@ -336,7 +352,9 @@ export default function FolderFileListWithSelect({ initialFiles, initialNextPage
             <p className="body-2 text-light-200">They will be moved to trash.</p>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
             <Button className="bg-red hover:bg-red/90" onClick={handleBulkDelete} disabled={loading}>
               {loading ? "..." : "Delete"}
             </Button>

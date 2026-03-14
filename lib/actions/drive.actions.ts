@@ -6,12 +6,16 @@ import {
   fetchDriveQuota,
   fetchDriveFolders,
   fetchDriveFileMetadata,
+  fetchDriveStarred,
   uploadDriveFile,
   deleteDriveFile,
   renameDriveFile,
   moveDriveFile,
+  updateDriveFileStarred,
   createDriveFolder,
   createDrivePermission,
+  fetchDrivePermissions,
+  updateDrivePermission,
   type DriveFileDisplay,
   type DriveFileType,
   type DriveFolder,
@@ -59,6 +63,10 @@ export async function getDriveFiles(options: {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("401") || msg.includes("invalid authentication credentials")) {
+      console.warn("Drive API 401 – token invalid or expired. Sign out and sign in again.");
+      return parseStringify({ documents: [], total: 0, nextPageToken: undefined });
+    }
     if (msg.includes("403") || msg.includes("Drive API")) {
       console.warn("Drive API 403 – enable Google Drive API in Cloud Console:", msg.slice(0, 200));
       return parseStringify({ documents: [], total: 0, nextPageToken: undefined });
@@ -114,9 +122,8 @@ export async function getDriveTotalSpaceUsed() {
     return parseStringify(totalSpace);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("403") || msg.includes("Drive")) {
-      console.warn("Drive API 403 – enable Google Drive API in Cloud Console:", msg.slice(0, 200));
-      return parseStringify({
+    const emptyQuota = () =>
+      parseStringify({
         image: { size: 0, latestDate: "" },
         document: { size: 0, latestDate: "" },
         video: { size: 0, latestDate: "" },
@@ -125,6 +132,13 @@ export async function getDriveTotalSpaceUsed() {
         used: 0,
         all: 0,
       });
+    if (msg.includes("401") || msg.includes("invalid authentication credentials")) {
+      console.warn("Drive API 401 – token invalid or expired. Sign out and sign in again.");
+      return emptyQuota();
+    }
+    if (msg.includes("403") || msg.includes("Drive")) {
+      console.warn("Drive API 403 – enable Google Drive API in Cloud Console:", msg.slice(0, 200));
+      return emptyQuota();
     }
     handleError(e, "Failed to get Drive quota");
   }
@@ -208,6 +222,76 @@ export async function moveDriveFileAction(fileId: string, addParents: string, re
   } catch (e) {
     console.error("Move failed", e);
     return { ok: false, error: e instanceof Error ? e.message : "Move failed" };
+  }
+}
+
+/** Mark item as starred. */
+export async function starDriveFileAction(fileId: string, starred: boolean) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw new Error("Not authenticated");
+    await updateDriveFileStarred(accessToken, fileId, starred);
+    revalidatePath("/");
+    revalidatePath("/folders");
+    revalidatePath("/documents");
+    revalidatePath("/images");
+    revalidatePath("/media");
+    revalidatePath("/others");
+    return { ok: true };
+  } catch (e) {
+    console.error("Star failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Failed" };
+  }
+}
+
+/** Starred: list folders and files marked with a star. */
+export async function getDriveStarredAction(options: { sort?: string; limit?: number; pageToken?: string } = {}) {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return parseStringify({ folders: [], files: [], nextPageToken: undefined });
+    }
+    const { folders, files, nextPageToken } = await fetchDriveStarred(accessToken, options);
+    return parseStringify({ folders, files, nextPageToken });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("401") || msg.includes("invalid authentication credentials")) {
+      return parseStringify({ folders: [], files: [], nextPageToken: undefined });
+    }
+    if (msg.includes("403") || msg.includes("Drive API")) {
+      return parseStringify({ folders: [], files: [], nextPageToken: undefined });
+    }
+    console.error("Starred list failed", e);
+    return parseStringify({ folders: [], files: [], nextPageToken: undefined });
+  }
+}
+
+/** Starred summary for dashboard card (count, total size, latest date). */
+export async function getDriveStarredSummary() {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return parseStringify({ count: 0, size: 0, latestDate: "" });
+    }
+    const { folders, files } = await fetchDriveStarred(accessToken, { limit: 1000 });
+    let size = 0;
+    let latestDate = "";
+    for (const f of files) {
+      size += f.size;
+      const d = f.$createdAt || "";
+      if (d && (!latestDate || d > latestDate)) latestDate = d;
+    }
+    for (const f of folders) {
+      const d = ""; // folders don't have $createdAt in our type
+      if (d && (!latestDate || d > latestDate)) latestDate = d;
+    }
+    return parseStringify({
+      count: folders.length + files.length,
+      size,
+      latestDate,
+    });
+  } catch (e) {
+    return parseStringify({ count: 0, size: 0, latestDate: "" });
   }
 }
 
@@ -322,12 +406,39 @@ export async function shareDriveFileAction(
   }
 }
 
-/** Allow anyone with the link to access (General access). */
+/** Get current "anyone with the link" permission for the file (for Share dialog). */
+export async function getFilePermissionsAction(fileId: string): Promise<{
+  generalAccess: "restricted" | "anyone";
+  anyoneRole: "reader" | "writer";
+} | null> {
+  try {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return null;
+    const permissions = await fetchDrivePermissions(accessToken, fileId);
+    const anyone = permissions.find((p) => p.type === "anyone");
+    if (!anyone) {
+      return { generalAccess: "restricted", anyoneRole: "reader" };
+    }
+    const role = anyone.role === "writer" ? "writer" : "reader";
+    return { generalAccess: "anyone", anyoneRole: role };
+  } catch (e) {
+    console.error("Get permissions failed", e);
+    return null;
+  }
+}
+
+/** Allow anyone with the link to access (General access). If "anyone" already exists, update its role. */
 export async function shareWithAnyoneAction(fileId: string, role: "reader" | "writer") {
   try {
     const accessToken = await getAccessToken();
     if (!accessToken) throw new Error("Not authenticated");
-    await createDrivePermission(accessToken, fileId, { type: "anyone", role });
+    const permissions = await fetchDrivePermissions(accessToken, fileId);
+    const anyone = permissions.find((p) => p.type === "anyone");
+    if (anyone) {
+      await updateDrivePermission(accessToken, fileId, anyone.id, role);
+    } else {
+      await createDrivePermission(accessToken, fileId, { type: "anyone", role });
+    }
     revalidatePath("/");
     revalidatePath("/folders");
     revalidatePath("/documents");
