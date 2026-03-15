@@ -17,7 +17,7 @@ const Layout = async ({ children }: { children: React.ReactNode }) => {
   if (!session?.user) return redirect("/sign-in");
 
   // Token expired (e.g. Google access token) → sign out and force re-login so data doesn’t show as 0 / lag
-  if (session.expiresAt != null && Date.now() / 1000 > session.expiresAt) {
+  if (session.error === "RefreshTokenError") {
     return redirect("/api/auth/signout?callbackUrl=%2Fsign-in");
   }
 

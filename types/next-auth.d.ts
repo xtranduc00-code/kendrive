@@ -3,7 +3,9 @@ import "next-auth";
 declare module "next-auth" {
   interface Session {
     accessToken?: string;
-    /** Google token expiry (seconds since epoch). When past, redirect to sign-in. */
+    /** Google token expiry (seconds since epoch). */
     expiresAt?: number;
+    /** Set when refresh failed; layout redirects to sign-in. */
+    error?: "RefreshTokenError";
   }
 }
