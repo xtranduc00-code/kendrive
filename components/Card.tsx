@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import Thumbnail from "@/components/Thumbnail";
-import { formatFileSizeDisplay, getFileIcon, isPreviewableInApp } from "@/lib/utils";
+import { formatFileSizeDisplay, getFileIcon, getDriveThumbnailUrl, isPreviewableInApp } from "@/lib/utils";
 import FormattedDateTime from "@/components/FormattedDateTime";
 import ActionDropdown from "@/components/ActionDropdown";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -53,6 +53,10 @@ const Card = ({ file, layout = "grid" }: CardProps) => {
   const iconSrc = getFileIcon(file.extension, file.type);
   const isList = layout === "list";
   const openInApp = isPreviewableInApp(file.mimeType);
+  const thumbnailUrl =
+    file.thumbnailLink ||
+    (file.type === "document" || file.type === "video" ? getDriveThumbnailUrl(file.$id) : undefined) ||
+    file.url;
   const fileHref = openInApp
     ? `/file/${file.$id}?mime=${encodeURIComponent(file.mimeType || "")}&name=${encodeURIComponent(file.name)}&from=${encodeURIComponent(pathname || "/folders")}`
     : file.url;
@@ -102,7 +106,7 @@ const Card = ({ file, layout = "grid" }: CardProps) => {
                 <Thumbnail
                   type={file.type}
                   extension={file.extension}
-                  url={file.thumbnailLink || file.url}
+                  url={thumbnailUrl}
                   className="!size-14 shrink-0"
                   imageClassName="!size-8"
                 />
@@ -122,7 +126,7 @@ const Card = ({ file, layout = "grid" }: CardProps) => {
                   <Thumbnail
                     type={file.type}
                     extension={file.extension}
-                    url={file.thumbnailLink || file.url}
+                    url={thumbnailUrl}
                     className="!size-24"
                     imageClassName="!size-14"
                   />

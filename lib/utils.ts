@@ -60,6 +60,47 @@ export function getFileEditUrl(fileId: string, mimeType?: string): string {
   return getFilePreviewUrl(fileId, mimeType, { edit: true });
 }
 
+/** Drive thumbnail URL (works for doc/ppt/sheet/video/image when user is logged in). Use when API does not return thumbnailLink. */
+export function getDriveThumbnailUrl(fileId: string, size = "w200"): string {
+  return `https://drive.google.com/thumbnail?id=${fileId}&sz=${size}`;
+}
+
+/** Parse Google Drive/Docs/Sheets/Slides URL and return fileId + mimeType if detectable */
+export function parseGoogleDriveUrl(
+  url: string
+): { fileId: string; mimeType?: string } | null {
+  try {
+    const u = url.trim();
+    if (!u) return null;
+    const parsed = new URL(u.startsWith("http") ? u : `https://${u}`);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname;
+
+    // drive.google.com/file/d/FILE_ID/view or /open?id=FILE_ID
+    if (host === "drive.google.com") {
+      const dMatch = path.match(/\/file\/d\/([^/]+)/);
+      if (dMatch) return { fileId: dMatch[1] };
+      const id = parsed.searchParams.get("id");
+      if (id) return { fileId: id };
+      return null;
+    }
+
+    // docs.google.com/document | spreadsheets | presentation /d/FILE_ID/...
+    if (host === "docs.google.com") {
+      const doc = path.match(/\/document\/d\/([^/]+)/);
+      if (doc) return { fileId: doc[1], mimeType: "application/vnd.google-apps.document" };
+      const sheet = path.match(/\/spreadsheets\/d\/([^/]+)/);
+      if (sheet) return { fileId: sheet[1], mimeType: "application/vnd.google-apps.spreadsheet" };
+      const pres = path.match(/\/presentation\/d\/([^/]+)/);
+      if (pres) return { fileId: pres[1], mimeType: "application/vnd.google-apps.presentation" };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Display file size; for Google files (Docs/Sheets/Slides) with size=0 show "—" */
 export function formatFileSizeDisplay(
   sizeInBytes: number,

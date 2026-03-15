@@ -1,14 +1,19 @@
 import Thumbnail from "@/components/Thumbnail";
 import FormattedDateTime from "@/components/FormattedDateTime";
-import { formatFileSizeDisplay, formatDateTime } from "@/lib/utils";
+import { formatFileSizeDisplay, formatDateTime, getDriveThumbnailUrl } from "@/lib/utils";
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { DriveFileDisplay } from "@/lib/google-drive";
 
+const thumbnailUrl = (file: DriveFileDisplay) =>
+  file.thumbnailLink ||
+  (file.type === "document" || file.type === "video" ? getDriveThumbnailUrl(file.$id) : undefined) ||
+  file.url;
+
 const ImageThumbnail = ({ file }: { file: DriveFileDisplay }) => (
   <div className="file-details-thumbnail">
-    <Thumbnail type={file.type} extension={file.extension} url={file.url} />
+    <Thumbnail type={file.type} extension={file.extension} url={thumbnailUrl(file)} />
     <div className="flex flex-col">
       <p className="subtitle-2 mb-1">{file.name}</p>
       <FormattedDateTime date={file.$createdAt} className="caption" />

@@ -10,7 +10,7 @@ import Thumbnail from "@/components/Thumbnail";
 import FormattedDateTime from "@/components/FormattedDateTime";
 import { useDebounce } from "use-debounce";
 import type { DriveFileDisplay } from "@/lib/google-drive";
-import { isPreviewableInApp } from "@/lib/utils";
+import { getDriveThumbnailUrl, isPreviewableInApp } from "@/lib/utils";
 
 const Search = () => {
   const [query, setQuery] = useState("");
@@ -83,7 +83,12 @@ const Search = () => {
         {open && (
           <ul className="search-result">
             {results.length > 0 ? (
-              results.map((file) => (
+              results.map((file) => {
+                const thumbnailUrl =
+                  file.thumbnailLink ||
+                  (file.type === "document" || file.type === "video" ? getDriveThumbnailUrl(file.$id) : undefined) ||
+                  file.url;
+                return (
                 <li
                   className="flex cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-light-400/60"
                   key={file.$id}
@@ -93,7 +98,7 @@ const Search = () => {
                     <Thumbnail
                       type={file.type}
                       extension={file.extension}
-                      url={file.url}
+                      url={thumbnailUrl}
                       className="size-9 min-w-9"
                     />
                     <div className="min-w-0 flex-1">
@@ -117,7 +122,8 @@ const Search = () => {
                     </svg>
                   </button>
                 </li>
-              ))
+                );
+              })
             ) : (
               <p className="empty-result">No files found</p>
             )}

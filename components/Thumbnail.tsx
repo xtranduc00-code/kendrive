@@ -1,4 +1,6 @@
-import React from "react";
+"use client";
+
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { cn, getFileIcon } from "@/lib/utils";
 
@@ -10,6 +12,9 @@ interface Props {
   className?: string;
 }
 
+// Types that can show a preview thumbnail (doc, ppt, excel, video, image)
+const PREVIEW_TYPES = ["image", "document", "video", "audio"] as const;
+
 export const Thumbnail = ({
   type,
   extension,
@@ -17,23 +22,29 @@ export const Thumbnail = ({
   imageClassName,
   className,
 }: Props) => {
-  // Only use url for next/image when it's a direct image URL (e.g. Drive thumbnailLink from googleusercontent.com).
-  // Drive webViewLink (drive.google.com/file/d/.../view) returns HTML, not image bytes.
+  const [loadError, setLoadError] = useState(false);
+  useEffect(() => setLoadError(false), [url]);
+  // Use thumbnail URL when: image with direct URL, or doc/ppt/excel/video/audio with any thumbnail link.
+  // Drive thumbnailLink can be googleusercontent.com (direct) or drive.google.com/thumbnail?id=... (auth with cookies).
   const isDirectImageUrl = url && !url.includes("drive.google.com/file");
-  const isImage = type === "image" && extension !== "svg" && isDirectImageUrl;
+  const isImageTypeWithUrl = type === "image" && extension !== "svg" && isDirectImageUrl;
+  const isPreviewableType = PREVIEW_TYPES.includes(type as (typeof PREVIEW_TYPES)[number]);
+  const showPreview = !loadError && (isImageTypeWithUrl || (isPreviewableType && !!url));
+  const iconSrc = getFileIcon(extension, type);
 
   return (
     <figure className={cn("thumbnail", className)}>
       <Image
-        src={isImage ? url! : getFileIcon(extension, type)}
+        src={showPreview ? url! : iconSrc}
         alt="thumbnail"
         width={100}
         height={100}
         className={cn(
           "size-8 object-contain",
           imageClassName,
-          isImage && "thumbnail-image",
+          showPreview && "thumbnail-image",
         )}
+        onError={() => setLoadError(true)}
       />
     </figure>
   );

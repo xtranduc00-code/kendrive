@@ -7,7 +7,7 @@ import { Thumbnail } from "@/components/Thumbnail";
 import { FormattedDateTime } from "@/components/FormattedDateTime";
 import ActionDropdown from "@/components/ActionDropdown";
 import type { DriveFileDisplay } from "@/lib/google-drive";
-import { isPreviewableInApp } from "@/lib/utils";
+import { getDriveThumbnailUrl, isPreviewableInApp } from "@/lib/utils";
 
 export function DashboardRecentFileRow({ file }: { file: DriveFileDisplay }) {
   const pathname = usePathname();
@@ -15,6 +15,10 @@ export function DashboardRecentFileRow({ file }: { file: DriveFileDisplay }) {
   const fileHref = openInApp
     ? `/file/${file.$id}?mime=${encodeURIComponent(file.mimeType || "")}&name=${encodeURIComponent(file.name)}&from=${encodeURIComponent(pathname || "/")}`
     : file.url;
+  const thumbnailUrl =
+    file.thumbnailLink ||
+    (file.type === "document" || file.type === "video" ? getDriveThumbnailUrl(file.$id) : undefined) ||
+    file.url;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -26,7 +30,7 @@ export function DashboardRecentFileRow({ file }: { file: DriveFileDisplay }) {
           <Thumbnail
             type={file.type}
             extension={file.extension}
-            url={file.url}
+            url={thumbnailUrl}
           />
           <div className="recent-file-details">
             <div className="flex flex-col gap-1">
